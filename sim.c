@@ -1,5 +1,4 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "sim.h"
@@ -7,23 +6,14 @@
 // Zero all simulator state arrays and initialize control flags to default values
 SimulatorState new_simulator(void) {
     SimulatorState sim;
-    memset(sim.memory, 0, sizeof(sim.memory));
-    memset(sim.registers, 0, sizeof(sim.registers));
-    memset(sim.hwregister, 0, sizeof(sim.hwregister));
-    memset(sim.disk, 0, sizeof(sim.disk));
-    memset(sim.monitor, 0, sizeof(sim.monitor));
-    sim.max_irq2_cycle = 0;
-    sim.registers[0] = 0;
-    sim.PC = 0;
-    sim.cycle = 0;
-    sim.halted = false;
-    sim.in_interrupt = false;
-    sim.bigimm_flag = false;
-    sim.disk_cycle_count = 0;
-    sim.disk_in_progress = false;
-
+    memset(sim.memory, 0, sizeof(sim.memory));       // Clears all memory slots
+    memset(sim.registers, 0, sizeof(sim.registers)); // Clears all registers
+    sim.PC = 0;                                      // Starts the Program Counter at 0
+    sim.cycle = 0;                                   // Starts the clock at cycle 0
+    sim.halted = false;                              // Ensures the processor is running
     return sim;
 }
+
 void load_inputs(SimulatorState* sim, const char* memin) {
     FILE* f;
     char line[100];
@@ -38,7 +28,7 @@ void load_inputs(SimulatorState* sim, const char* memin) {
     fclose(f);
 }
 
-FILE* load_outputs(SimulatorState* sim,const char* code, FILE* trace_file, FILE* sram_out_file) {
+/*FILE* load_outputs(SimulatorState* sim, const char* code, FILE* trace_file, FILE* sram_out_file) {
     
     char base_name[256];
     char trace_filename[256];
@@ -69,221 +59,166 @@ FILE* load_outputs(SimulatorState* sim,const char* code, FILE* trace_file, FILE*
     }
 
     return trace_file;
+}*/
+
+void write_outputs(SimulatorState* sim) {
+    FILE* f = fopen("sram_out.txt", "w");
+    if (!f) {
+        perror("Error opening sram_out.txt");
+        return;
+    }
+
+    int last_used_index = MEM_SIZE - 1;
+    while (last_used_index >= 0 && sim->memory[last_used_index] == 0) {
+        last_used_index--;
+    }
+
+    for (int i = 0; i <= last_used_index; i++) {
+        fprintf(f, "%08x\n", sim->memory[i]);
+    }
+    fclose(f);
 }
 
-// void write_outputs(SimulatorState* sim, const char* code) {
-
-//     FILE* f;
-
-//     //memout
-//     f = fopen(memout, "w");
-//     int last_used_index = MEM_SIZE;
-//     while (last_used_index >= 0 && sim->memory[last_used_index] == 0)
-//         last_used_index--;
-
-//     for (int i = 0; i <= last_used_index; i++)
-//         fprintf(f, "%08X\n", sim->memory[i]);
-//     fclose(f);
-
-// }
-
 // Fetch the current instruction from memory and decode opcode and operands
-void fetch_decode_execute(SimulatorState* sim, const char* trace_file) {
+void fetch_decode_execute(SimulatorState* sim, FILE* trace_file) {
 
-    uint32_t next_pc = sim->PC;
-    uint32_t current_cycle = sim->cycle;
+    uint16_t next_pc = sim->PC + 1; // PC + 1
 
-    //fetch
+    // Fetch
     uint32_t inst = sim->memory[sim->PC];
     uint16_t imm16 = inst & 0xFFFF;
     uint32_t imm32 = (uint32_t)(int32_t)(int16_t)imm16;
 
-    //decode
-    uint8_t opcode = (inst >> 25) & 0x1F;
-    uint8_t rd = (inst >> 22) & 0x7;
-    uint8_t rs = (inst >> 19) & 0x7;
-    uint8_t rt = (inst >> 16) & 0x7;
+    // Decode
+    uint8_t opcode = (inst >> 26) & 0x3F;
+    uint8_t dst = (inst >> 23) & 0x7;
+    uint8_t src0 = (inst >> 20) & 0x7;
+    uint8_t src1 = (inst >> 17) & 0x7;
 
     uint32_t* R = sim->registers;
 
-    uint32_t val_rs = (rs == 1) ? imm32 : R[rs];
-    uint32_t val_rt = (rt == 1) ? imm32 : R[rt];
-    uint32_t val_rd = (rd == 1) ? imm32 : R[rd];
+    // Resolve source values 0 is 0, 1 is immediate
+    uint32_t val_src0 = (src0 == 0) ? 0 : (src0 == 1) ? imm32 : R[src0];
+    uint32_t val_src1 = (src1 == 0) ? 0 : (src1 == 1) ? imm32 : R[src1];
 
+    // Execute
     switch (opcode) {
-    
-    case 0: if (rd >= 2) R[rd] = val_rs + val_rt; sim->PC = next_pc; break; //add
-    case 1: if (rd >= 2) R[rd] = val_rs - val_rt; sim->PC = next_pc; break; //sub
-    case 2: if (rd >= 2) R[rd] = val_rs << val_rt; sim->PC = next_pc; break;  //LSF
-    case 3: if (rd >= 2) R[rd] = ((int32_t)val_rs) >> val_rt; sim->PC = next_pc; break; //RSF
-    case 4: if (rd >= 2) R[rd] = val_rs & val_rt; sim->PC = next_pc; break; //and
-    case 5: if (rd >= 2) R[rd] = val_rs | val_rt; sim->PC = next_pc; break; //or
-    case 6: if (rd >= 2) R[rd] = val_rs ^ val_rt; sim->PC = next_pc; break; //xor
+    case 0: if (dst >= 2) R[dst] = val_src0 + val_src1; sim->PC = next_pc; break; // ADD
+    case 1: if (dst >= 2) R[dst] = val_src0 - val_src1; sim->PC = next_pc; break; // SUB
+    case 2: if (dst >= 2) R[dst] = val_src0 << val_src1; sim->PC = next_pc; break;  // LSF
+    case 3: if (dst >= 2) R[dst] = ((int32_t)val_src0) >> val_src1; sim->PC = next_pc; break; // RSF
+    case 4: if (dst >= 2) R[dst] = val_src0 & val_src1; sim->PC = next_pc; break; // AND
+    case 5: if (dst >= 2) R[dst] = val_src0 | val_src1; sim->PC = next_pc; break; // OR
+    case 6: if (dst >= 2) R[dst] = val_src0 ^ val_src1; sim->PC = next_pc; break; // XOR
+    case 7: if (dst >= 2) R[dst] = (R[dst] & 0x0000FFFF) | (imm32 << 16); sim->PC = next_pc; break; // LHI
 
-case 7: 
-    if (rd >= 2) R[rd] = (R[rd] & 0x0000FFFF) | (imm32 << 16); 
-    sim->PC = next_pc; 
-    break; // LHI
+    case 8: if (dst >= 2) { if (val_src1 < MEM_SIZE) R[dst] = sim->memory[val_src1]; } sim->PC = next_pc; break; // LD
+    case 9: if (val_src1 < MEM_SIZE) sim->memory[val_src1] = val_src0; sim->PC = next_pc; break; // ST
 
+    case 16: if ((int32_t)val_src0 < (int32_t)val_src1) { R[7] = sim->PC; sim->PC = imm32; }
+           else sim->PC = next_pc; break; // JLT
+    case 17: if ((int32_t)val_src0 <= (int32_t)val_src1) { R[7] = sim->PC; sim->PC = imm32; }
+           else sim->PC = next_pc; break; // JLE 
+    case 18: if (val_src0 == val_src1) { R[7] = sim->PC; sim->PC = imm32; }
+           else sim->PC = next_pc; break; // JEQ 
+    case 19: if (val_src0 != val_src1) { R[7] = sim->PC; sim->PC = imm32; }
+           else sim->PC = next_pc; break; // JNE 
+    case 20: R[7] = sim->PC; sim->PC = val_src0; break; // JIN
+    case 24: sim->halted = true; break; // HLT
 
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-        // shifts
-    case 6: if (rd >= 2) R[rd] = val_rs << val_rt; sim->PC = next_pc; break;              //shl
-    case 3: if (rd >= 2) R[rd] = ((int32_t)val_rs) >> val_rt; sim->PC = next_pc; break;  //shr
-    case 8: if (rd >= 2) R[rd] = val_rs >> val_rt; sim->PC = next_pc; break;            //sar
-
-        // conditional jumps
-    case 9:  if (val_rs == val_rt) sim->PC = val_rd; else sim->PC = next_pc; break;                   //beq
-    case 10: if (val_rs != val_rt) sim->PC = val_rd; else sim->PC = next_pc; break;                   //bne
-    case 11: if ((int32_t)val_rs < (int32_t)val_rt) sim->PC = val_rd; else sim->PC = next_pc; break;  //blt
-    case 12: if ((int32_t)val_rs > (int32_t)val_rt) sim->PC = val_rd; else sim->PC = next_pc; break;  //bgt
-    case 13: if ((int32_t)val_rs <= (int32_t)val_rt) sim->PC = val_rd; else sim->PC = next_pc; break; //ble
-    case 14: if ((int32_t)val_rs >= (int32_t)val_rt) sim->PC = val_rd; else sim->PC = next_pc; break; //bge
-
-    case 15: // jal
-        if (rd >= 2) {
-            R[rd] = next_pc;
-            sim->PC = val_rs;
-        }
-        break;
-
-    case 16:  // lw
-        if (rd >= 2)
-            if ((val_rs + val_rt) < MEM_SIZE)
-                R[rd] = sim->memory[val_rs + val_rt];
+    default:
         sim->PC = next_pc;
-        break;
-
-    case 17: // sw
-        sim->memory[val_rs + val_rt] = val_rd;
-        sim->PC = next_pc;
-        break;
-
-    case 18: // reti
-        sim->PC = IO[7];
-        sim->in_interrupt = false;
-        break;
-
-    case 19: // in 
-        if (rd >= 2) {
-            R[rd] = IO[val_rs + val_rt];
-            update_hwregtrace(sim, hwregtrace_file, "READ", val_rs + val_rt, current_cycle);
-            sim->PC = next_pc;
-        }
-        break;
-
-    case 20: // out 
-        IO[val_rs + val_rt] = val_rd;
-        update_hwregtrace(sim, hwregtrace_file, "WRITE", val_rs + val_rt, current_cycle);
-        sim->PC = next_pc;
-        break;
-
-    case 21: //halt
-        sim->cycle = current_cycle;
-        sim->halted = true;
         break;
     }
 }
 
-void update_traces(SimulatorState* sim, const char* trace, const char* leds, const char* seg7, uint32_t prev_regs[NUM_REGISTERS]
-    , uint32_t inst, uint32_t imm_value, int16_t current_pc)
-{
-    //trace
-    FILE* ftrace = fopen(trace, "a");
-    if (!ftrace) {
-        perror("Error opening trace.txt");
-    }
-    else {
-        fprintf(ftrace, "%08X %03X %08X", sim->cycle - 1, current_pc, inst);
+// Update the current trace
+void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, uint32_t inst, uint32_t save_regs[NUM_REGISTERS]) {
 
-        for (int i = 0; i < NUM_REGISTERS; i++) {
-            if (i == 0)
-                fprintf(ftrace, " %08X", 0);
-            else if (i == 1)
-                fprintf(ftrace, " %08X", imm_value);
-            else
-                fprintf(ftrace, " %08X", prev_regs[i]);
-        }
+    // Decode instruction fields for printing
+    uint16_t imm16 = inst & 0xFFFF;
+    uint32_t imm32 = (uint32_t)(int32_t)(int16_t)imm16;
+    uint8_t opcode = (inst >> 26) & 0x3F;
+    uint8_t dst = (inst >> 23) & 0x7;
+    uint8_t src0 = (inst >> 20) & 0x7;
+    uint8_t src1 = (inst >> 17) & 0x7;
 
-        fprintf(ftrace, "\n");
-        fclose(ftrace);
-    }
+    // Map opcode numbers to strings
+    const char* opcode_names[] = {
+        "ADD", "SUB", "LSF", "RSF", "AND", "OR", "XOR", "LHI",
+        "LD", "ST", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN",
+        "JLT", "JLE", "JEQ", "JNE", "JIN", "UNKNOWN", "UNKNOWN", "UNKNOWN", "HLT"
+    };
 
-    //monitor
-    if (sim->hwregister[22] == 1) { // monitorcmd == 1
-        uint16_t addr = sim->hwregister[20];   // monitoraddr
-        uint8_t value = (uint8_t)(sim->hwregister[21] & 0xFF); // monitordata 
-        if (addr < MONITOR_SIZE)
-            sim->monitor[addr] = value;
-        sim->hwregister[22] = 0;    // monitorcmd = 0
-    }
+    const char* op_name = (opcode <= 24) ? opcode_names[opcode] : "UNKNOWN";
 
-    //leds
-    static uint32_t last_leds = 0x00000000; //initial value
-    if (sim->hwregister[9] != last_leds) {
-        FILE* fleds = fopen(leds, "a");
-        if (fleds) {
-            fprintf(fleds, "%08X %08X\n", sim->cycle - 1, sim->hwregister[9]);
-            fclose(fleds);
-            last_leds = sim->hwregister[9];
-        }
-        else
-            perror("Error opening leds.txt");
-    }
+    // Instruction cycle @ PC
+    fprintf(trace_file, "instruction %d (%04x) @ PC %d (%04x)\n",
+        sim->cycle, sim->cycle, current_pc, current_pc);
 
-    //seg7
-    static uint32_t last_seg7 = 0x00000000;
-    if (sim->hwregister[10] != last_seg7) {
-        FILE* fseg = fopen(seg7, "a");
-        if (fseg) {
-            fprintf(fseg, "%08X %08X\n", sim->cycle - 1, sim->hwregister[10]);
-            fclose(fseg);
-            last_seg7 = sim->hwregister[10];
-        }
-        else
-            perror("Error opening display7seg.txt");
+    // Instruction breakdown
+    fprintf(trace_file, "pc = %04x, inst = %08x, opcode = %d (%s), dst=%d, src0=%d, src1=%d, immediate = %08x\n",
+        current_pc, inst, opcode, op_name, dst, src0, src1, imm32);
 
+    // Registers 0-3
+    fprintf(trace_file, "r[0] = %08x r[1] = %08x r[2] = %08x r[3] = %08x\n",
+        save_regs[0], save_regs[1], save_regs[2], save_regs[3]);
 
-    }
+    // Registers 4-7
+    fprintf(trace_file, "r[4] = %08x r[5] = %08x r[6] = %08x r[7] = %08x\n",
+        save_regs[4], save_regs[5], save_regs[6], save_regs[7]);
+
+    fprintf(trace_file, "\n"); // Blank line
 }
 
-void run_simulator(SimulatorState* sim, const char* code, FILE* trace_file, FILE* sram_out_file)
+void run_simulator(SimulatorState* sim, FILE* trace_file)
 {
     // Run until HALT instruction is encountered
     while (!sim->halted) {
 
-        // Save the current PC before instruction execution
-        int16_t current_pc = sim->PC;
+        // Save the current PC and instruction BEFORE execution
+        uint16_t current_pc = sim->PC;
+        uint32_t inst = sim->memory[current_pc];
 
-        // Backup registers for trace comparison
+        // Backup registers BEFORE execution for the trace output
         uint32_t save_regs[NUM_REGISTERS];
-        for (int i = 0; i < NUM_REGISTERS; i++)
+        for (int i = 0; i < NUM_REGISTERS; i++) {
             save_regs[i] = sim->registers[i];
+        }
 
         // Execute instruction
         fetch_decode_execute(sim, trace_file);
-        sim->cycle++; // Advance simulation cycle
 
-        // Update trace and monitor/leds/7seg output
-       // update_traces(sim, trace_file);
+        // Update trace
+        update_traces(sim, trace_file, current_pc, inst, save_regs);
 
-        //Check if we need to handle an interrupt now
-        check_if_interrupt_occured(sim);
+        // Advance simulation cycle
+        sim->cycle++;
     }
 }
 
 // initialize simulator, load inputs, run simulation and write outputs
 int main(int argc, char* argv[]) {
 
-    FILE *trace_file;
-    FILE *sram_out_file;
+    if (argc != 2) {
+        return 1;
+    }
 
     SimulatorState sim = new_simulator();
     load_inputs(&sim, argv[1]);
-    load_outputs(&sim,  argv[1], &trace_file, &sram_out_file);
-    run_simulator(&sim, argv[1], trace_file, sram_out_file);
- //   write_outputs(&sim, argv[1], trace_file, sram_out_file);
+
+    // Open trace file
+    FILE* trace_file = fopen("trace.txt", "w");
+    if (!trace_file) {
+        return 1;
+    }
+
+    // Run the simulation
+    run_simulator(&sim, trace_file);
+
+    // Close trace file and write final memory state
+    fclose(trace_file);
+    write_outputs(&sim);
 
     return 0;
 }
