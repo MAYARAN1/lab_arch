@@ -20,7 +20,7 @@ typedef struct {
 // Initializes a new simulator
 SimulatorState new_simulator(void);
 // Loads inputs
-void load_inputs(SimulatorState* sim, const char* memin);
+int load_inputs(SimulatorState* sim, const char* memin);
 // Does one iteration of fetch/decode/execute
 void fetch_decode_execute(SimulatorState* sim, FILE* trace_file);
 void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, uint32_t inst, uint32_t save_regs[NUM_REGISTERS]);

@@ -14,52 +14,22 @@ SimulatorState new_simulator(void) {
     return sim;
 }
 
-void load_inputs(SimulatorState* sim, const char* memin) {
+int load_inputs(SimulatorState* sim, const char* memin) {
     FILE* f;
     char line[100];
+    int i = 0;
 
     // Load initial memory contents from memin.txt
     f = fopen(memin, "r");
     if (!f) { perror(memin); exit(1); }
 
-    for (int i = 0; i < MEM_SIZE && fgets(line, sizeof(line), f); i++) {
+    for (i = 0; i < MEM_SIZE && fgets(line, sizeof(line), f); i++) {
         sscanf(line, "%x", &sim->memory[i]);
     }
+
     fclose(f);
+    return i; // Return the number of lines read for first line in trace.txt
 }
-
-/*FILE* load_outputs(SimulatorState* sim, const char* code, FILE* trace_file, FILE* sram_out_file) {
-    
-    char base_name[256];
-    char trace_filename[256];
-    char sram_filename[256];
-
-    strncpy(base_name, code, sizeof(base_name) - 1);
-    base_name[sizeof(base_name) - 1] = '\0'; 
-
-    char *dot = strrchr(base_name, '.');
-    if (dot != NULL) {
-        *dot = '\0'; 
-    }
-
-    snprintf(trace_filename, sizeof(trace_filename), "%s_trace.txt", base_name);
-    snprintf(sram_filename, sizeof(sram_filename), "%s_sram_out.txt", base_name);
-
-    trace_file = fopen(trace_filename, "w");
-    if (trace_file == NULL) {
-        printf("Error: Could not create %s\n", trace_filename);
-        exit(1);
-    }
-
-    sram_out_file = fopen(sram_filename, "w");
-    if (sram_out_file == NULL) {
-        printf("Error: Could not create %s\n", sram_filename);
-        fclose(trace_file); 
-        exit(1);
-    }
-
-    return trace_file;
-}*/
 
 void write_outputs(SimulatorState* sim) {
     FILE* f = fopen("sram_out.txt", "w");
@@ -90,10 +60,10 @@ void fetch_decode_execute(SimulatorState* sim, FILE* trace_file) {
     uint32_t imm32 = (uint32_t)(int32_t)(int16_t)imm16;
 
     // Decode
-    uint8_t opcode = (inst >> 26) & 0x3F;
-    uint8_t dst = (inst >> 23) & 0x7;
-    uint8_t src0 = (inst >> 20) & 0x7;
-    uint8_t src1 = (inst >> 17) & 0x7;
+    uint8_t opcode = (inst >> 25) & 0x1F;
+    uint8_t dst = (inst >> 22) & 0x7;
+    uint8_t src0 = (inst >> 19) & 0x7;
+    uint8_t src1 = (inst >> 16) & 0x7;
 
     uint32_t* R = sim->registers;
 
@@ -138,10 +108,10 @@ void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, u
     // Decode instruction fields for printing
     uint16_t imm16 = inst & 0xFFFF;
     uint32_t imm32 = (uint32_t)(int32_t)(int16_t)imm16;
-    uint8_t opcode = (inst >> 26) & 0x3F;
-    uint8_t dst = (inst >> 23) & 0x7;
-    uint8_t src0 = (inst >> 20) & 0x7;
-    uint8_t src1 = (inst >> 17) & 0x7;
+    uint8_t opcode = (inst >> 25) & 0x1F;
+    uint8_t dst = (inst >> 22) & 0x7;
+    uint8_t src0 = (inst >> 19) & 0x7;
+    uint8_t src1 = (inst >> 16) & 0x7;
 
     // Map opcode numbers to strings
     const char* opcode_names[] = {
@@ -157,27 +127,32 @@ void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, u
         sim->cycle, sim->cycle, current_pc, current_pc);
 
     // Instruction breakdown
-    fprintf(trace_file, "pc = %04x, inst = %08x, opcode = %d (%s), dst=%d, src0=%d, src1=%d, immediate = %08x\n",
+    fprintf(trace_file, "pc = %04x, inst = %08x, opcode = %d (%s), dst = %d, src0 = %d, src1 = %d, immediate = %08x \n",
         current_pc, inst, opcode, op_name, dst, src0, src1, imm32);
 
     // Registers 0-3
-    fprintf(trace_file, "r[0] = %08x r[1] = %08x r[2] = %08x r[3] = %08x\n",
+    fprintf(trace_file, "r[0] = %08x r[1] = %08x r[2] = %08x r[3] = %08x \n",
         save_regs[0], save_regs[1], save_regs[2], save_regs[3]);
 
     // Registers 4-7
-    fprintf(trace_file, "r[4] = %08x r[5] = %08x r[6] = %08x r[7] = %08x\n",
+    fprintf(trace_file, "r[4] = %08x r[5] = %08x r[6] = %08x r[7] = %08x \n",
         save_regs[4], save_regs[5], save_regs[6], save_regs[7]);
     
     //execution result
-    if (opcode <= 7 || opcode == 8) {  //LD and ALU ops
+    if (opcode <=  8) {  //LD and ALU ops
         fprintf(trace_file, "\n>>>> EXEC: R[%d] = %d %s %d <<<<\n", 
                 dst, sim->registers[dst], op_name, (src1 == 1 ? imm32 : save_regs[src1]));
     } else if (opcode == 9) { // ST 
         fprintf(trace_file, "\n>>>> EXEC: MEM[%d] = %d %s %d <<<<\n", 
                 sim->registers[src1], sim->registers[src0], op_name, sim->registers[src1]);
-    } else {
-        fprintf(trace_file, "\n>>>> EXEC: %s <<<<\n", op_name); //jumps and halts
-    }
+    } else if (opcode >= 16 && opcode <= 19){//jumps
+            fprintf(trace_file, "\n>>>> EXEC: %s %d, %d, %d <<<<\n", op_name, 
+            sim->registers[src0], sim->registers[src1], imm32); 
+    }else if (opcode == 24) { // HLT
+        fprintf(trace_file, "\n>>>> EXEC: HALT at PC %04x <<<<\n", current_pc);
+    }else 
+        fprintf(trace_file, "\n>>>> EXEC: %s <<<<\n", op_name);
+    
 
     fprintf(trace_file, "\n"); // Blank line
 }
@@ -216,16 +191,19 @@ int main(int argc, char* argv[]) {
     }
 
     SimulatorState sim = new_simulator();
-    load_inputs(&sim, argv[1]);
+    int num_lines = load_inputs(&sim, argv[1]);
 
     // Open trace file
     FILE* trace_file = fopen("trace.txt", "w");
     if (!trace_file) {
         return 1;
     }
+    fprintf(trace_file, "program %s loaded, %d lines\n\n", argv[1], num_lines);
 
     // Run the simulation
     run_simulator(&sim, trace_file);
+
+    fprintf(trace_file, "sim finished at pc %d, %d instructions\n", sim.PC, sim.cycle);
 
     // Close trace file and write final memory state
     fclose(trace_file);
@@ -233,4 +211,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
