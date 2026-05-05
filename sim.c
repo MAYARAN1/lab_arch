@@ -43,7 +43,7 @@ void write_outputs(SimulatorState* sim) {
         last_used_index--;
     }
 
-    for (int i = 0; i <= last_used_index; i++) {
+    for (int i = 0; i <= MEM_SIZE - 1; i++) {
         fprintf(f, "%08x\n", sim->memory[i]);
     }
     fclose(f);
