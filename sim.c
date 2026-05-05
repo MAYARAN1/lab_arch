@@ -153,7 +153,7 @@ void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, u
     const char* op_name = (opcode <= 24) ? opcode_names[opcode] : "UNKNOWN";
 
     // Instruction cycle @ PC
-    fprintf(trace_file, "instruction %d (%04x) @ PC %d (%04x)\n",
+    fprintf(trace_file, "--- instruction %d (%04x) @ PC %d (%04x) -----------------------------------------------------------\n",
         sim->cycle, sim->cycle, current_pc, current_pc);
 
     // Instruction breakdown
@@ -167,6 +167,17 @@ void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, u
     // Registers 4-7
     fprintf(trace_file, "r[4] = %08x r[5] = %08x r[6] = %08x r[7] = %08x\n",
         save_regs[4], save_regs[5], save_regs[6], save_regs[7]);
+    
+    //execution result
+    if (opcode <= 7 || opcode == 8) {  //LD and ALU ops
+        fprintf(trace_file, "\n>>>> EXEC: R[%d] = %d %s %d <<<<\n", 
+                dst, sim->registers[dst], op_name, (src1 == 1 ? imm32 : save_regs[src1]));
+    } else if (opcode == 9) { // ST 
+        fprintf(trace_file, "\n>>>> EXEC: MEM[%d] = %d %s %d <<<<\n", 
+                sim->registers[src1], sim->registers[src0], op_name, sim->registers[src1]);
+    } else {
+        fprintf(trace_file, "\n>>>> EXEC: %s <<<<\n", op_name); //jumps and halts
+    }
 
     fprintf(trace_file, "\n"); // Blank line
 }
