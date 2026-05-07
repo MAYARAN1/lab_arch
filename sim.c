@@ -147,7 +147,7 @@ void update_traces(SimulatorState* sim, FILE* trace_file, uint16_t current_pc, u
     }else if (opcode == 9) { // ST 
         fprintf(trace_file, "\n>>>> EXEC: MEM[%d] = R[%d] = %08x <<<<\n", 
                 sim->registers[src1], src0, sim->registers[src0]);
-    } else if (opcode >= 16 && opcode <= 19){//jumps
+    } else if (opcode >= 16 && opcode <= 20){//jumps
             fprintf(trace_file, "\n>>>> EXEC: %s %d, %d, %d <<<<\n", op_name, 
             sim->registers[src0], sim->registers[src1], sim->PC); 
     }else if (opcode == 24) { // HLT
