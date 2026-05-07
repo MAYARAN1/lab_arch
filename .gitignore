@@ -2,3 +2,5 @@ x64/
 sim/
 .vs
 .vscode
+.bin
+.txt

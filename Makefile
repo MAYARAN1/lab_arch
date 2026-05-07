@@ -1,4 +1,5 @@
-all: asm
+all: iss
 
-asm: asm.c
-	gcc -Wall asm.c -o asm
+iss: sim.c sim.h
+	gcc -Wall sim.c -o iss
+
