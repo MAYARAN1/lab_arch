@@ -81,15 +81,15 @@ void fetch_decode_execute(SimulatorState* sim, FILE* trace_file) {
     case 8: if (dst >= 2) { if (val_src1 < MEM_SIZE) R[dst] = sim->memory[val_src1]; } sim->PC = next_pc; break; // LD
     case 9: if (val_src1 < MEM_SIZE) sim->memory[val_src1] = val_src0; sim->PC = next_pc; break; // ST
 
-    case 16: if ((int32_t)val_src0 < (int32_t)val_src1) { R[7] = next_pc; sim->PC = imm32; }
+    case 16: if ((int32_t)val_src0 < (int32_t)val_src1) { R[7] = sim->PC; sim->PC = imm32; }
            else sim->PC = next_pc; break; // JLT
-    case 17: if ((int32_t)val_src0 <= (int32_t)val_src1) { R[7] = next_pc; sim->PC = imm32; }
+    case 17: if ((int32_t)val_src0 <= (int32_t)val_src1) { R[7] = sim->PC; sim->PC = imm32; }
            else sim->PC = next_pc; break; // JLE 
-    case 18: if (val_src0 == val_src1) { R[7] = next_pc; sim->PC = imm32; }
+    case 18: if (val_src0 == val_src1) { R[7] = sim->PC; sim->PC = imm32; }
            else sim->PC = next_pc; break; // JEQ 
-    case 19: if (val_src0 != val_src1) { R[7] = next_pc; sim->PC = imm32; }
+    case 19: if (val_src0 != val_src1) { R[7] = sim->PC; sim->PC = imm32; }
            else sim->PC = next_pc; break; // JNE 
-    case 20: R[7] = next_pc; sim->PC = val_src0; break; // JIN
+    case 20: R[7] = sim->PC; sim->PC = val_src0; break; // JIN
     case 24: sim->halted = true; break; // HLT
 
     default:
